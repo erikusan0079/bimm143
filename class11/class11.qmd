@@ -1,0 +1,117 @@
+---
+title: "Structural Bioinformatics (pt 2)"
+author: "Yu (Ericsson) Cao (PID: A16421048)"
+format: pdf
+---
+
+AlphaFold has changed the game for protein structure prediction and allows anyone with sufficient bioinformatics skills to predict the structure of virtually any protein.
+
+
+We ran AlphaFold via GoogleColab at:
+https://github.com/sokrypton/ColabFold
+
+In particular we used their AlphaFold2_mmseqs2 version that uses mmseqs2 rather than HMMMer for sequence search.
+
+The main outputs include a set of **PDB structure files** along with matching **JSON format files** that tell us how good the resulting models might be.
+
+Let's start by loading these structures up in Mol*
+
+```{r}
+library(bio3d)
+
+results_dir <- "hivpr2_23119_0/"
+```
+
+```{r}
+pdb_files <- list.files(path=results_dir, pattern = "*.pdb", full.names = T)
+
+pdbs <- pdbaln(pdb_files, fit=TRUE, exefile="msa")
+
+basename(pdb_files)
+```
+
+
+```{r}
+core <- core.find(pdbs)
+```
+
+# RMSD
+```{r}
+rd <- rmsd(pdbs, fit=T)
+range(rd)
+```
+
+```{r}
+library(pheatmap)
+
+colnames(rd) <- paste0("m",1:5)
+rownames(rd) <- paste0("m",1:5)
+pheatmap(rd)
+```
+```{r}
+pdb <- read.pdb("1hsg")
+
+#You could optionally obtain secondary structure from a call to stride() or dssp() on any of the model structures.
+
+plotb3(pdbs$b[1,], typ="l", lwd=2, sse=pdb)
+points(pdbs$b[2,], typ="l", col="red")
+points(pdbs$b[3,], typ="l", col="blue")
+points(pdbs$b[4,], typ="l", col="darkgreen")
+points(pdbs$b[5,], typ="l", col="orange")
+abline(v=100, col="gray")
+```
+
+```{r}
+core.inds <- print(core, vol=0.5)
+xyz <- pdbfit(pdbs, core.inds, outpath="corefit_structures")
+rf <- rmsf(xyz)
+
+plotb3(rf, sse=pdbs)
+abline(v=100, col="gray", ylab="RMSF")
+```
+
+If the predicted model has more than one domain, each domain may have high confidence, yet the relative positions of the domains may not. The estimated reliability of relative domain positions is in graphs of predicted aligned error (PAE) which are included in the downloadable zip file and analyzed in R above.
+
+
+```{r}
+library(jsonlite)
+
+# Listing of all PAE JSON files
+pae_files <- list.files(path=results_dir,
+                        pattern=".*model.*\\.json",
+                        full.names = TRUE)
+
+pae1 <- read_json(pae_files[1],simplifyVector = TRUE)
+pae5 <- read_json(pae_files[5],simplifyVector = TRUE)
+
+attributes(pae1)
+
+head(pae1$plddt) 
+
+pae1$max_pae
+
+pae5$max_pae
+
+plot.dmat(pae1$pae, 
+          xlab="Residue Position (i)",
+          ylab="Residue Position (j)")
+
+
+```
+```{r}
+plot.dmat(pae5$pae, 
+          xlab="Residue Position (i)",
+          ylab="Residue Position (j)",
+          grid.col = "black",
+          zlim=c(0,30))
+```
+
+```{r}
+plot.dmat(pae1$pae, 
+          xlab="Residue Position (i)",
+          ylab="Residue Position (j)",
+          grid.col = "black",
+          zlim=c(0,30))
+```
+
+![HIV-Pr Dimer structure prediction](dimer.png)

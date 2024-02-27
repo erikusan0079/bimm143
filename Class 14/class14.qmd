@@ -1,0 +1,237 @@
+---
+title: "Class14: RNA-Seq Mini Project"
+author: "Yu (Ericsson) Cao (PID: A16421048)"
+format: pdf
+---
+
+Run a complete RNASeq analysis workflow from counts to enriched genesets...
+
+## Data import
+
+```{r}
+counts <- read.csv("GSE37704_featurecounts.csv", row.names=1)
+metadata <- read.csv("GSE37704_metadata.csv")
+```
+
+## Data exploration
+
+```{r}
+head(counts, 3)
+```
+
+```{r}
+head(metadata)
+```
+
+Check if the colData and countData match up
+
+```{r}
+metadata$id
+```
+
+```{r}
+colnames(counts)
+```
+
+```{r}
+#RM first column
+countData <- counts[,-1]
+```
+
+Now check if the metadata and count data columns match
+```{r}
+all(colnames(countData) == metadata$id)
+```
+
+We need to remove all the zero count genes.
+
+```{r}
+head(countData)
+```
+
+To identify these zero count genes we can sum across the rows and check if the sum is more than zero
+
+```{r}
+to.keep.inds <- rowSums(countData) > 0
+nonzero.counts <- countData[to.keep.inds,]
+```
+
+## DESeq setup and analysis
+
+```{r}
+#| message: false
+
+library(DESeq2)
+```
+
+```{r}
+dds <- DESeqDataSetFromMatrix(countData = nonzero.counts,
+                              colData = metadata,
+                              design = ~condition)
+```
+
+```{r}
+dds <- DESeq(dds)
+```
+
+
+## Result extraction
+
+```{r}
+res <- results(dds)
+head(res)
+```
+```{r}
+summary(res)
+```
+
+## Volcano Plot
+
+
+```{r}
+plot(res$log2FoldChange, -log(res$padj))
+```
+
+Setup a wee color vector for this plot
+
+```{r}
+mycols <- rep("gray", nrow(res) )
+
+
+mycols[ abs(res$log2FoldChange) > 2 ] <- "red"
+
+
+inds <- (res$padj < 0.01) & (abs(res$log2FoldChange) > 2 )
+mycols[ inds ] <- "blue"
+
+plot( res$log2FoldChange, -log(res$padj),col=mycols, xlab="Log2(FoldChange)", ylab="-Log(P-value)" )
+```
+
+
+## Gene annotation
+
+```{r}
+library("AnnotationDbi")
+library("org.Hs.eg.db")
+
+columns(org.Hs.eg.db)
+```
+```{r}
+res$symbol <- mapIds(x=org.Hs.eg.db,
+                    keys=rownames(nonzero.counts), 
+                    keytype="ENSEMBL",
+                    column="SYMBOL")
+
+res$entrez <- mapIds(x=org.Hs.eg.db,
+                    keys=rownames(nonzero.counts), 
+                    keytype="ENSEMBL",
+                    column="ENTREZID")
+
+res$name <- mapIds(x=org.Hs.eg.db,
+                    keys=rownames(nonzero.counts), 
+                    keytype="ENSEMBL",
+                    column="GENENAME")
+
+
+head(res)
+
+```
+
+## Pathway analysis
+
+```{r}
+#| message: false
+library(gage)
+library(gageData)
+library(pathview)
+```
+
+```{r}
+data(kegg.sets.hs)
+data(sigmet.idx.hs)
+
+kegg.sets.hs = kegg.sets.hs[sigmet.idx.hs]
+
+head(kegg.sets.hs, 3)
+```
+
+```{r}
+foldchanges = res$log2FoldChange
+names(foldchanges) = res$entrez
+head(foldchanges)
+```
+
+```{r}
+# Get the results
+keggres = gage(foldchanges, gsets=kegg.sets.hs)
+attributes(keggres)
+```
+
+Now, let's look at one of these pathways: hsa04110
+```{r}
+pathview(gene.data=foldchanges, pathway.id="hsa04110")
+```
+![The KEGG Cell Cycle Pathway](hsa04110.pathview.png)
+
+```{r}
+# A different PDF based output of the same data
+pathview(gene.data=foldchanges, pathway.id="hsa04110", kegg.native=FALSE)
+```
+```{r}
+## Focus on top 5 upregulated pathways here for demo purposes only
+keggrespathways <- rownames(keggres$greater)[1:5]
+
+# Extract the 8 character long IDs part of each string
+keggresids = substr(keggrespathways, start=1, stop=8)
+keggresids
+```
+
+```{r}
+pathview(gene.data=foldchanges, pathway.id=keggresids, species="hsa")
+```
+![](hsa04640.pathview.png)
+![](hsa04630.pathview.png)
+![](hsa00140.pathview.png)
+![](hsa04142.pathview.png)
+![](hsa04330.pathview.png)
+
+## Gene Ontology
+
+```{r}
+data(go.sets.hs)
+data(go.subs.hs)
+
+# Focus on Biological Process subset of GO
+gobpsets <- go.sets.hs[go.subs.hs$BP]
+
+gobpres <- gage(foldchanges, gsets=gobpsets, same.dir=TRUE)
+```
+
+```{r}
+head(gobpres$less)
+```
+
+## Reactome Analysis
+
+We can use reactome via an R package or use their relatively new website interface. Let's use the latter.
+
+It wants a list of our most interesting (i.e. significant) genes in gene SYMBOL format. 
+
+```{r}
+sig_genes <- res[res$padj <= 0.05 & !is.na(res$padj), "symbol"]
+print(paste("Total number of significant genes:", length(sig_genes)))
+```
+```{r}
+#sig_genes
+```
+
+We will write these our to a wee file so we can use them on the website:
+```{r}
+write.table(sig_genes, file="significant_genes.txt", row.names=FALSE, col.names=FALSE, quote=FALSE)
+```
+
+![Example figure from reactome online - mitosis](R-HSA-68886.png)
+
+>Q: What pathway has the most significant “Entities p-value”? Do the most significant pathways listed match your previous KEGG results? What factors could cause differences between the two methods?
+
+A: Cell Cycle has the most significant entities P-value. Yes, the most significant pathways listed do match my previous KEGG results. They analyze pathways from different perspectives.
