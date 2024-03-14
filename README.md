@@ -1,6 +1,6 @@
 # BIMM143
 
-Class work from W24 for [BIMM143 at UC San Diego](https://bioboot.github.io/bimm143_W24/).
+Classwork by Yu (Ericsson) Cao from W24 for [BIMM143 at UC San Diego](https://bioboot.github.io/bimm143_W24/).
 
 ## Contents 
 
